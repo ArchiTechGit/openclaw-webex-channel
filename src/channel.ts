@@ -1,9 +1,13 @@
-import { createChatChannelPlugin } from "openclaw/plugin-sdk/core";
+import * as OpenClawCore from "openclaw/plugin-sdk/core";
 import type { ChannelPlugin } from "openclaw/plugin-sdk/channel-contract";
 import { WebexChannelConfigSchema, hasConfiguredWebexChannel, resolveWebexChannelConfig } from "./config-schema.js";
 import { monitorWebexProvider } from "./monitor.js";
 import { sendTextWebex } from "./outbound.js";
 import { getWebexRuntime } from "./runtime.js";
+
+const createChatChannelPluginCompat: (config: any) => any =
+  (OpenClawCore as { createChatChannelPlugin?: (config: any) => any }).createChatChannelPlugin ??
+  ((config: any) => config?.base ?? config);
 
 type RuntimeState = {
   provider?: Awaited<ReturnType<typeof monitorWebexProvider>>;
@@ -11,7 +15,7 @@ type RuntimeState = {
 
 const state: RuntimeState = {};
 
-export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPlugin({
+export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompat({
   base: {
     id: "webex",
     meta: {
