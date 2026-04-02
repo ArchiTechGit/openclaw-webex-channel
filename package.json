@@ -1,0 +1,26 @@
+{
+  "name": "@openclaw/webex-channel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw Cisco Webex channel plugin",
+  "type": "module",
+  "main": "./index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "webex-node-bot-framework": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "@types/express": "^4.17.21",
+    "typescript": "^5.8.3"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
