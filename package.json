@@ -21,11 +21,6 @@
   "openclaw": {
     "extensions": [
       "./index.ts"
-    ],
-    "channel": {
-      "id": "webex",
-      "label": "Cisco Webex",
-      "blurb": "Send and receive messages through a Webex bot."
-    }
+    ]
   }
 }

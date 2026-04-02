@@ -19,12 +19,6 @@ export type MonitorWebexResult = {
 export async function monitorWebexProvider(options: MonitorWebexOptions): Promise<MonitorWebexResult | null> {
   const runtime = getWebexRuntime();
   const channelCfg = resolveWebexChannelConfig(options.cfg);
-  runtime.log?.debug?.("webex monitor start requested", {
-    enabled: channelCfg.enabled !== false,
-    hasToken: Boolean(channelCfg.token?.trim()),
-    webhookUrl: channelCfg.webhookUrl,
-    listenPort: channelCfg.listenPort,
-  });
 
   if (channelCfg.enabled === false) {
     runtime.log?.debug?.("webex provider disabled");
@@ -57,15 +51,11 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
   bindFrameworkWebhook(app, path, frameworkRuntime.webhookMiddleware);
 
   const server = await listen(app, port);
-  runtime.log?.debug?.("webex local listener started", { port, path });
   await frameworkRuntime.framework.start();
-  runtime.log?.debug?.("webex framework.start completed", { port, path });
 
   const shutdown = async () => {
-    runtime.log?.debug?.("webex shutdown initiated", { port, path });
     await Promise.resolve(frameworkRuntime.framework.stop());
     await closeServer(server);
-    runtime.log?.debug?.("webex shutdown completed", { port, path });
   };
 
   runtime.log?.info?.("webex provider started", { port, path });

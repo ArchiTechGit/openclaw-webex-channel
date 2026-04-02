@@ -33,15 +33,6 @@ Example:
 3. Enable the channel in your OpenClaw config by setting `channels.webex.enabled: true` and providing `token` + `webhookUrl`.
 4. Restart the OpenClaw gateway so the channel plugin is registered and started.
 
-The plugin now exposes UI metadata for Control UI. In the channel settings panel,
-you should see editable fields for:
-
-- Enabled
-- Bot Token
-- Webhook URL
-- Default Room ID
-- Listener Port
-
 Minimal enablement example:
 
 ```json

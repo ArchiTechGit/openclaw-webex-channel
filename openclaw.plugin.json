@@ -1,47 +1,9 @@
 {
   "id": "webex",
-  "kind": "channel",
-  "name": "Cisco Webex",
-  "description": "Cisco Webex channel plugin",
   "channels": ["webex"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {
-      "enabled": {
-        "type": "boolean",
-        "title": "Enabled",
-        "default": true,
-        "description": "Enable or disable the Webex channel plugin."
-      },
-      "token": {
-        "type": "string",
-        "title": "Bot Token",
-        "minLength": 1,
-        "description": "Webex bot access token from Webex Developer Portal."
-      },
-      "webhookUrl": {
-        "type": "string",
-        "title": "Webhook URL",
-        "minLength": 1,
-        "description": "Public URL Webex will call for inbound events.",
-        "examples": [
-          "https://your-public-host.example.com/webex/webhook"
-        ]
-      },
-      "defaultTo": {
-        "type": "string",
-        "title": "Default Room ID",
-        "description": "Optional default roomId used when outbound sends omit a target."
-      },
-      "listenPort": {
-        "type": "integer",
-        "title": "Listener Port",
-        "minimum": 1,
-        "maximum": 65535,
-        "description": "Optional local listener port override to avoid collisions (for example 3988)."
-      }
-    },
-    "required": ["token", "webhookUrl"]
+    "properties": {}
   }
 }
