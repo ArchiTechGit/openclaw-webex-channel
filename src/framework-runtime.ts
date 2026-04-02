@@ -58,6 +58,8 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
   const framework = new FrameworkCtor({
     token: config.token,
     webhookUrl: config.webhookUrl,
+    // Prevent startup discovery from spawning bot objects in existing/default rooms.
+    maxStartupSpaces: 0,
   }) as FrameworkLike;
 
   const webhookMiddleware = webhookFactory(framework) as WebexFrameworkRuntime["webhookMiddleware"];
