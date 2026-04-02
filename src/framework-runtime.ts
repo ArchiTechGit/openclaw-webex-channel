@@ -4,6 +4,28 @@ import { getWebexRuntime, type WebexInboundEvent } from "./runtime.js";
 
 const require = createRequire(import.meta.url);
 
+function ensureNavigatorWritableForLegacyDeps(): void {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  if (!descriptor) {
+    return;
+  }
+
+  // Some legacy Webex transitive dependencies assign to globalThis.navigator.
+  // Newer Node versions expose navigator via a getter-only property.
+  const isGetterOnly = typeof descriptor.get === "function" && descriptor.set === undefined;
+  if (!isGetterOnly || descriptor.configurable !== true) {
+    return;
+  }
+
+  const current = descriptor.get?.call(globalThis);
+  Object.defineProperty(globalThis, "navigator", {
+    value: current,
+    writable: true,
+    configurable: true,
+    enumerable: descriptor.enumerable ?? true,
+  });
+}
+
 type FrameworkLike = {
   email?: string;
   start: () => Promise<boolean> | boolean;
@@ -29,6 +51,7 @@ export type WebexFrameworkRuntime = {
 };
 
 export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): WebexFrameworkRuntime {
+  ensureNavigatorWritableForLegacyDeps();
   const FrameworkCtor = require("webex-node-bot-framework");
   const webhookFactory = require("webex-node-bot-framework/webhook");
 

@@ -33,5 +33,6 @@ Example:
 ## Local OpenShell Notes
 
 - Ensure webhookUrl is publicly reachable from Webex cloud.
-- The plugin listens on the port inferred from webhookUrl (80/443 default).
+- The plugin listens on `PORT` when set, otherwise uses webhookUrl explicit port, otherwise falls back to `3978`.
 - If running behind a reverse proxy in OpenShell, route webhookUrl path to this plugin service.
+- The plugin includes a Node compatibility shim for legacy Webex dependencies that mutate `globalThis.navigator`.
