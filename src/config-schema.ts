@@ -3,6 +3,7 @@ export type WebexChannelConfig = {
   token?: string;
   webhookUrl?: string;
   defaultTo?: string;
+  listenPort?: number;
 };
 
 type JsonSchemaObject = {
@@ -31,6 +32,13 @@ const schema: JsonSchemaObject = {
       type: "string",
       minLength: 1,
       description: "Default Webex roomId target for outbound messages.",
+    },
+    listenPort: {
+      type: "integer",
+      minimum: 1,
+      maximum: 65535,
+      description:
+        "Local HTTP listen port override for the Webex webhook server (useful when 3978 is already in use).",
     },
   },
   required: ["token", "webhookUrl"],

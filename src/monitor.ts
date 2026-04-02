@@ -32,8 +32,14 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
 
   const parsedWebhook = parseWebhookUrl(channelCfg.webhookUrl);
   const path = parsedWebhook.path;
+  const cfgListenPort =
+    typeof channelCfg.listenPort === "number" && channelCfg.listenPort > 0
+      ? Math.floor(channelCfg.listenPort)
+      : undefined;
   const envPort = Number(process.env.PORT || "");
-  const port = Number.isFinite(envPort) && envPort > 0 ? envPort : (parsedWebhook.port ?? 3978);
+  const port =
+    cfgListenPort ??
+    (Number.isFinite(envPort) && envPort > 0 ? envPort : (parsedWebhook.port ?? 3978));
   const frameworkRuntime = createWebexFrameworkRuntime({
     token: channelCfg.token,
     webhookUrl: channelCfg.webhookUrl,
@@ -70,7 +76,21 @@ async function listen(app: ReturnType<typeof express>, port: number): Promise<Se
   return await new Promise<Server>((resolve, reject) => {
     const server = app.listen(port);
     server.once("listening", () => resolve(server));
-    server.once("error", reject);
+    server.once("error", (err: unknown) => {
+      const code =
+        typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code?: unknown }).code)
+          : "";
+      if (code === "EADDRINUSE") {
+        reject(
+          new Error(
+            `webex listen port ${port} already in use. Set channels.webex.listenPort, PORT, or webhookUrl with an explicit port to resolve the conflict.`,
+          ),
+        );
+        return;
+      }
+      reject(err);
+    });
   });
 }
 

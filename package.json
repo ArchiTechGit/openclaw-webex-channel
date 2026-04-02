@@ -1,5 +1,5 @@
 {
-  "name": "@openclaw/webex-channel",
+  "name": "@openclaw/webex",
   "version": "0.1.0",
   "private": true,
   "description": "OpenClaw Cisco Webex channel plugin",
