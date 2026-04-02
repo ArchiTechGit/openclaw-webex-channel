@@ -32,6 +32,10 @@ Example:
 - Sends outbound text messages to a target roomId, or person:<personId>.
 - Ignores bot-authored inbound messages to prevent loops.
 
+## Slash Commands
+
+- `/webex-listwebhooks`: Lists all Webex webhooks visible to the configured bot token and posts a JSON summary in the current space.
+
 ## Local OpenShell Notes
 
 - Ensure webhookUrl is publicly reachable from Webex cloud.
