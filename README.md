@@ -26,15 +26,41 @@ Example:
 }
 ```
 
+## Enable in OpenClaw
+
+1. Place this plugin in your OpenClaw extensions path (for example `.openclaw/extensions/webex`).
+2. Ensure OpenClaw loads the plugin entry from `index.ts` (or built output if your runtime requires compiled JS).
+3. Enable the channel in your OpenClaw config by setting `channels.webex.enabled: true` and providing `token` + `webhookUrl`.
+4. Restart the OpenClaw gateway so the channel plugin is registered and started.
+
+The plugin now exposes UI metadata for Control UI. In the channel settings panel,
+you should see editable fields for:
+
+- Enabled
+- Bot Token
+- Webhook URL
+- Default Room ID
+- Listener Port
+
+Minimal enablement example:
+
+```json
+{
+  "channels": {
+    "webex": {
+      "enabled": true,
+      "token": "YOUR_WEBEX_BOT_TOKEN",
+      "webhookUrl": "https://your-public-host.example.com/webex/webhook"
+    }
+  }
+}
+```
+
 ## Behavior
 
 - Receives inbound messages from Webex via webhook middleware from webex-node-bot-framework.
 - Sends outbound text messages to a target roomId, or person:<personId>.
 - Ignores bot-authored inbound messages to prevent loops.
-
-## Slash Commands
-
-- `/webex-listwebhooks`: Lists all Webex webhooks visible to the configured bot token and posts a JSON summary in the current space.
 
 ## Local OpenShell Notes
 
