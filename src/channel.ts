@@ -15,6 +15,18 @@ type RuntimeState = {
 
 const state: RuntimeState = {};
 
+async function waitUntilAbort(signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return await new Promise<void>(() => {});
+  }
+  if (signal.aborted) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
 export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompat({
   base: {
     id: "webex",
@@ -52,6 +64,11 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
     },
     gateway: {
       startAccount: async (ctx: any) => {
+        if (state.provider) {
+          await state.provider.shutdown();
+          state.provider = undefined;
+        }
+
         const provider = await monitorWebexProvider({
           cfg: ctx.cfg,
           abortSignal: ctx.abortSignal,
@@ -59,7 +76,19 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
         state.provider = provider ?? undefined;
         const configured = hasConfiguredWebexChannel(ctx.cfg);
         ctx.setStatus({ accountId: ctx.accountId, configured, running: Boolean(provider) });
-        return provider;
+        if (!provider) {
+          return null;
+        }
+
+        try {
+          await waitUntilAbort(ctx.abortSignal);
+          return null;
+        } finally {
+          if (state.provider) {
+            await state.provider.shutdown();
+            state.provider = undefined;
+          }
+        }
       },
     },
     outbound: {

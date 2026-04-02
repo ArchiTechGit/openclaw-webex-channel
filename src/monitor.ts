@@ -58,10 +58,6 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
     await closeServer(server);
   };
 
-  options.abortSignal?.addEventListener("abort", () => {
-    void shutdown();
-  });
-
   runtime.log?.info?.("webex provider started", { port, path });
 
   return {
