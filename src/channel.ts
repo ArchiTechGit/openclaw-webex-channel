@@ -37,12 +37,17 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
     reload: { configPrefixes: ["channels.webex"] },
     configSchema: WebexChannelConfigSchema,
     config: {
+      // Keep both modern and legacy config adapter fields for broad runtime compatibility.
       sectionKey: "webex",
+      listAccountIds: () => ["default"],
       resolveAccount: (cfg: any) => ({
         accountId: "default",
         enabled: cfg?.channels?.webex?.enabled !== false,
         configured: hasConfiguredWebexChannel(cfg),
       }),
+      resolveAccessorAccount: ({ cfg }: any) => resolveWebexChannelConfig(cfg),
+      resolveAllowFrom: () => undefined,
+      resolveDefaultTo: (account: any) => account?.defaultTo,
       isConfigured: (_account: unknown, cfg: unknown) => hasConfiguredWebexChannel(cfg),
     },
     gateway: {
