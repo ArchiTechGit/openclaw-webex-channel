@@ -1,10 +1,15 @@
-import { buildChannelConfigSchema, type JsonSchemaObject } from "openclaw/plugin-sdk/channel-config-schema";
-
 export type WebexChannelConfig = {
   enabled?: boolean;
   token?: string;
   webhookUrl?: string;
   defaultTo?: string;
+};
+
+type JsonSchemaObject = {
+  type: "object";
+  additionalProperties?: boolean;
+  properties?: Record<string, unknown>;
+  required?: string[];
 };
 
 const schema: JsonSchemaObject = {
@@ -31,7 +36,7 @@ const schema: JsonSchemaObject = {
   required: ["token", "webhookUrl"],
 };
 
-export const WebexChannelConfigSchema = buildChannelConfigSchema(schema);
+export const WebexChannelConfigSchema = schema;
 
 export function resolveWebexChannelConfig(cfg: unknown): WebexChannelConfig {
   const channelCfg = (cfg as { channels?: { webex?: WebexChannelConfig } } | undefined)?.channels?.webex;
