@@ -34,7 +34,7 @@ const schema: JsonSchemaObject = {
       description: "Default Webex roomId target for outbound messages.",
     },
     listenPort: {
-      type: "integer",
+      type: "number",
       minimum: 1,
       maximum: 65535,
       description:

@@ -20,6 +20,18 @@ export type WebexRuntime = {
 
 let runtime: WebexRuntime = {};
 
+export function webexLogInfo(msg: string, data?: unknown): void {
+  runtime.log?.info?.(msg, data);
+}
+
+export function webexLogDebug(msg: string, data?: unknown): void {
+  runtime.log?.debug?.(msg, data);
+}
+
+export function webexLogError(msg: string, data?: unknown): void {
+  runtime.log?.error?.(msg, data);
+}
+
 export function setWebexRuntime(next: WebexRuntime): void {
   runtime = next ?? {};
 }

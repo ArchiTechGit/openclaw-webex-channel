@@ -2,7 +2,7 @@ import express from "express";
 import type { Server } from "node:http";
 import { createWebexFrameworkRuntime, type WebexFrameworkRuntime, bindFrameworkWebhook } from "./framework-runtime.js";
 import { parseWebhookUrl, resolveWebexChannelConfig } from "./config-schema.js";
-import { getWebexRuntime } from "./runtime.js";
+import { getWebexRuntime, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 export type MonitorWebexOptions = {
   cfg: unknown;
@@ -19,6 +19,12 @@ export type MonitorWebexResult = {
 export async function monitorWebexProvider(options: MonitorWebexOptions): Promise<MonitorWebexResult | null> {
   const runtime = getWebexRuntime();
   const channelCfg = resolveWebexChannelConfig(options.cfg);
+
+  webexLogDebug("webex monitor starting", {
+    enabled: channelCfg.enabled !== false,
+    hasToken: Boolean(channelCfg.token?.trim()),
+    hasWebhookUrl: Boolean(channelCfg.webhookUrl?.trim()),
+  });
 
   if (channelCfg.enabled === false) {
     runtime.log?.debug?.("webex provider disabled");
@@ -50,12 +56,23 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
   app.use(express.json({ limit: "2mb" }));
   bindFrameworkWebhook(app, path, frameworkRuntime.webhookMiddleware);
 
+  webexLogInfo("webex monitor binding http listener", { port, path });
   const server = await listen(app, port);
-  await frameworkRuntime.framework.start();
+  try {
+    webexLogInfo("webex framework.start begin", { port, path });
+    await frameworkRuntime.framework.start();
+    webexLogInfo("webex framework.start complete", { port, path });
+  } catch (err) {
+    webexLogError("webex framework.start failed", { error: String(err), port, path });
+    await closeServer(server);
+    throw err;
+  }
 
   const shutdown = async () => {
+    webexLogInfo("webex monitor shutdown begin", { port, path });
     await Promise.resolve(frameworkRuntime.framework.stop());
     await closeServer(server);
+    webexLogInfo("webex monitor shutdown complete", { port, path });
   };
 
   runtime.log?.info?.("webex provider started", { port, path });
@@ -71,7 +88,10 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
 async function listen(app: ReturnType<typeof express>, port: number): Promise<Server> {
   return await new Promise<Server>((resolve, reject) => {
     const server = app.listen(port);
-    server.once("listening", () => resolve(server));
+    server.once("listening", () => {
+      webexLogDebug("webex http listener active", { port });
+      resolve(server);
+    });
     server.once("error", (err: unknown) => {
       const code =
         typeof err === "object" && err !== null && "code" in err
@@ -85,6 +105,7 @@ async function listen(app: ReturnType<typeof express>, port: number): Promise<Se
         );
         return;
       }
+      webexLogError("webex http listener error", { port, code, error: String(err) });
       reject(err);
     });
   });

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createRequire } from "node:module";
-import { getWebexRuntime, type WebexInboundEvent } from "./runtime.js";
+import { getWebexRuntime, type WebexInboundEvent, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 const require = createRequire(import.meta.url);
 
@@ -51,6 +51,10 @@ export type WebexFrameworkRuntime = {
 };
 
 export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): WebexFrameworkRuntime {
+  webexLogInfo("webex framework init starting", {
+    webhookHost: safeWebhookHost(config.webhookUrl),
+    hasToken: Boolean(config.token?.trim()),
+  });
   ensureNavigatorWritableForLegacyDeps();
   const FrameworkCtor = require("webex-node-bot-framework");
   const webhookFactory = require("webex-node-bot-framework/webhook");
@@ -62,24 +66,52 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
     maxStartupSpaces: 0,
   }) as FrameworkLike;
 
+  framework.on("log", (msg: unknown) => {
+    webexLogDebug("webex framework log", { msg: String(msg ?? "") });
+  });
+  framework.on("start", () => {
+    webexLogInfo("webex framework start event");
+  });
+  framework.on("initialized", () => {
+    webexLogInfo("webex framework initialized event");
+  });
+  framework.on("stop", () => {
+    webexLogInfo("webex framework stop event");
+  });
+  framework.on("spawn", (_bot: unknown, id: unknown, addedBy: unknown) => {
+    webexLogDebug("webex framework spawn event", {
+      id: String(id ?? ""),
+      hasAddedBy: Boolean(addedBy),
+    });
+  });
+
   const webhookMiddleware = webhookFactory(framework) as WebexFrameworkRuntime["webhookMiddleware"];
 
   const attachInboundHandlers = () => {
     framework.on("message", (_bot: unknown, trigger: any) => {
-      const runtime = getWebexRuntime();
       const botEmail = framework.email?.toLowerCase().trim();
       const senderEmail = String(trigger?.person?.emails?.[0] ?? trigger?.personEmail ?? "").toLowerCase().trim();
 
       if (botEmail && senderEmail && botEmail === senderEmail) {
+        webexLogDebug("webex inbound ignored bot-authored message", { senderEmail });
         return;
       }
 
       const text = String(trigger?.message?.text ?? "").trim();
       const roomId = String(trigger?.message?.roomId ?? "").trim();
       if (!text || !roomId) {
-        runtime.log?.debug?.("webex inbound ignored: missing text or roomId");
+        webexLogDebug("webex inbound ignored: missing text or roomId", {
+          hasText: Boolean(text),
+          hasRoomId: Boolean(roomId),
+        });
         return;
       }
+
+      webexLogDebug("webex inbound received", {
+        roomId,
+        messageId: typeof trigger?.message?.id === "string" ? trigger.message.id : undefined,
+        senderEmail,
+      });
 
       const event: WebexInboundEvent = {
         text,
@@ -90,8 +122,8 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
         raw: trigger,
       };
 
-      void Promise.resolve(runtime.onInboundMessage?.(event)).catch((err) => {
-        runtime.log?.error?.("webex inbound dispatch failed", { error: String(err) });
+      void Promise.resolve(getWebexRuntime().onInboundMessage?.(event)).catch((err) => {
+        webexLogError("webex inbound dispatch failed", { error: String(err) });
       });
     });
   };
@@ -108,21 +140,37 @@ export async function sendFrameworkMessage(
   to: string,
   text: string,
 ): Promise<void> {
+  webexLogDebug("webex outbound dispatch begin", {
+    target: to,
+    textLength: text.length,
+  });
   const bot = framework.getBotByRoomId(to);
   if (bot) {
     await bot.say(text);
+    webexLogInfo("webex outbound sent via bot room context", { target: to });
     return;
   }
 
   const sdk = framework.getWebexSDK();
   if (to.startsWith("person:")) {
     await sdk.messages.create({ toPersonId: to.slice("person:".length), markdown: text });
+    webexLogInfo("webex outbound sent via direct person target", { target: to });
     return;
   }
 
   await sdk.messages.create({ roomId: to, markdown: text });
+  webexLogInfo("webex outbound sent via room target", { target: to });
 }
 
 export function bindFrameworkWebhook(app: Express, path: string, middleware: WebexFrameworkRuntime["webhookMiddleware"]): void {
+  webexLogDebug("webex webhook route bound", { path });
   app.post(path, (req, res, next) => middleware(req, res, next));
+}
+
+function safeWebhookHost(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).host;
+  } catch {
+    return "invalid";
+  }
 }

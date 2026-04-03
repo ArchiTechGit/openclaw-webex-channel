@@ -3,7 +3,7 @@ import type { ChannelPlugin } from "openclaw/plugin-sdk/channel-contract";
 import { WebexChannelConfigSchema, hasConfiguredWebexChannel, resolveWebexChannelConfig } from "./config-schema.js";
 import { monitorWebexProvider } from "./monitor.js";
 import { sendTextWebex } from "./outbound.js";
-import { getWebexRuntime } from "./runtime.js";
+import { getWebexRuntime, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 const createChatChannelPluginCompat: (config: any) => any =
   (OpenClawCore as { createChatChannelPlugin?: (config: any) => any }).createChatChannelPlugin ??
@@ -64,18 +64,33 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
     },
     gateway: {
       startAccount: async (ctx: any) => {
+          webexLogInfo("webex gateway startAccount begin", {
+            accountId: String(ctx.accountId ?? "default"),
+          });
         if (state.provider) {
+            webexLogDebug("webex gateway shutting down previous provider before restart");
           await state.provider.shutdown();
           state.provider = undefined;
         }
 
-        const provider = await monitorWebexProvider({
-          cfg: ctx.cfg,
-          abortSignal: ctx.abortSignal,
-        });
+          let provider: Awaited<ReturnType<typeof monitorWebexProvider>> | null;
+          try {
+            provider = await monitorWebexProvider({
+              cfg: ctx.cfg,
+              abortSignal: ctx.abortSignal,
+            });
+          } catch (err) {
+            webexLogError("webex gateway startAccount failed", { error: String(err) });
+            throw err;
+          }
         state.provider = provider ?? undefined;
         const configured = hasConfiguredWebexChannel(ctx.cfg);
         ctx.setStatus({ accountId: ctx.accountId, configured, running: Boolean(provider) });
+          webexLogInfo("webex gateway status updated", {
+            accountId: String(ctx.accountId ?? "default"),
+            configured,
+            running: Boolean(provider),
+          });
         if (!provider) {
           return null;
         }
@@ -85,9 +100,15 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
           return null;
         } finally {
           if (state.provider) {
+              webexLogInfo("webex gateway abort detected; shutting down provider", {
+                accountId: String(ctx.accountId ?? "default"),
+              });
             await state.provider.shutdown();
             state.provider = undefined;
           }
+            webexLogInfo("webex gateway startAccount complete", {
+              accountId: String(ctx.accountId ?? "default"),
+            });
         }
       },
     },
@@ -111,7 +132,7 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
           to,
           text: params.text,
         });
-        runtime.log?.debug?.("webex outbound sent", { to });
+        webexLogDebug("webex outbound sent", { to });
         return { messageId: "framework", conversationId: to };
       },
     },
