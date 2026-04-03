@@ -17,7 +17,7 @@ const defineChannelPluginEntryCompat: (params: any) => any =
             properties: {},
           }),
     register(api: any) {
-      params.setRuntime?.(api.runtime);
+      params.setRuntime?.(api?.runtime ?? api);
       api.registerChannel?.({ plugin: params.plugin });
       params.registerCliMetadata?.(api);
       params.registerFull?.(api);

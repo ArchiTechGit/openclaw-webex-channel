@@ -3,7 +3,7 @@ import type { ChannelPlugin } from "openclaw/plugin-sdk/channel-contract";
 import { WebexChannelConfigSchema, hasConfiguredWebexChannel, resolveWebexChannelConfig } from "./config-schema.js";
 import { monitorWebexProvider } from "./monitor.js";
 import { sendTextWebex } from "./outbound.js";
-import { getWebexRuntime, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
+import { getWebexRuntime, setWebexRuntime, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 const createChatChannelPluginCompat: (config: any) => any =
   (OpenClawCore as { createChatChannelPlugin?: (config: any) => any }).createChatChannelPlugin ??
@@ -64,6 +64,7 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
     },
     gateway: {
       startAccount: async (ctx: any) => {
+        setWebexRuntime(ctx?.runtime ?? ctx);
           webexLogInfo("webex gateway startAccount begin", {
             accountId: String(ctx.accountId ?? "default"),
           });
