@@ -111,6 +111,8 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
         roomId,
         messageId: typeof trigger?.message?.id === "string" ? trigger.message.id : undefined,
         senderEmail,
+        textLength: text.length,
+        textPreview: truncate(text, 280),
       });
 
       const event: WebexInboundEvent = {
@@ -146,19 +148,84 @@ export async function sendFrameworkMessage(
   });
   const bot = framework.getBotByRoomId(to);
   if (bot) {
-    await bot.say(text);
+    webexLogInfo("webex api call begin", {
+      api: "bot.say",
+      target: to,
+      textLength: text.length,
+      textPreview: truncate(text, 280),
+    });
+    try {
+      await bot.say(text);
+      webexLogInfo("webex api call success", {
+        api: "bot.say",
+        target: to,
+      });
+    } catch (err) {
+      webexLogError("webex api call failed", {
+        api: "bot.say",
+        target: to,
+        error: String(err),
+      });
+      throw err;
+    }
     webexLogInfo("webex outbound sent via bot room context", { target: to });
     return;
   }
 
   const sdk = framework.getWebexSDK();
   if (to.startsWith("person:")) {
-    await sdk.messages.create({ toPersonId: to.slice("person:".length), markdown: text });
+    const payload = { toPersonId: to.slice("person:".length), markdown: text };
+    webexLogInfo("webex api call begin", {
+      api: "messages.create",
+      mode: "direct",
+      target: payload.toPersonId,
+      textLength: text.length,
+      textPreview: truncate(text, 280),
+    });
+    try {
+      await sdk.messages.create(payload);
+      webexLogInfo("webex api call success", {
+        api: "messages.create",
+        mode: "direct",
+        target: payload.toPersonId,
+      });
+    } catch (err) {
+      webexLogError("webex api call failed", {
+        api: "messages.create",
+        mode: "direct",
+        target: payload.toPersonId,
+        error: String(err),
+      });
+      throw err;
+    }
     webexLogInfo("webex outbound sent via direct person target", { target: to });
     return;
   }
 
-  await sdk.messages.create({ roomId: to, markdown: text });
+  const payload = { roomId: to, markdown: text };
+  webexLogInfo("webex api call begin", {
+    api: "messages.create",
+    mode: "room",
+    target: payload.roomId,
+    textLength: text.length,
+    textPreview: truncate(text, 280),
+  });
+  try {
+    await sdk.messages.create(payload);
+    webexLogInfo("webex api call success", {
+      api: "messages.create",
+      mode: "room",
+      target: payload.roomId,
+    });
+  } catch (err) {
+    webexLogError("webex api call failed", {
+      api: "messages.create",
+      mode: "room",
+      target: payload.roomId,
+      error: String(err),
+    });
+    throw err;
+  }
   webexLogInfo("webex outbound sent via room target", { target: to });
 }
 
@@ -173,4 +240,8 @@ function safeWebhookHost(rawUrl: string): string {
   } catch {
     return "invalid";
   }
+}
+
+function truncate(text: string, maxLength: number): string {
+  return text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 1))}...`;
 }

@@ -53,6 +53,44 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
   frameworkRuntime.attachInboundHandlers();
 
   const app = express();
+  app.use((req, res, next) => {
+    const startedAt = Date.now();
+    const contentType = req.header("content-type") ?? "";
+    const contentLength = Number(req.header("content-length") || "0") || 0;
+    webexLogDebug("webex api request begin", {
+      method: req.method,
+      path: req.originalUrl,
+      contentType,
+      contentLength,
+      userAgent: req.header("user-agent") ?? "",
+    });
+
+    res.on("finish", () => {
+      const durationMs = Date.now() - startedAt;
+      const body = req.body;
+      const bodyRecord = body && typeof body === "object" ? (body as Record<string, unknown>) : undefined;
+      const dataRecord =
+        bodyRecord?.data && typeof bodyRecord.data === "object"
+          ? (bodyRecord.data as Record<string, unknown>)
+          : undefined;
+      const messageText =
+        typeof dataRecord?.text === "string"
+          ? dataRecord.text
+          : "";
+
+      webexLogInfo("webex api request complete", {
+        method: req.method,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        durationMs,
+        messageId: typeof dataRecord?.id === "string" ? dataRecord.id : undefined,
+        roomId: typeof dataRecord?.roomId === "string" ? dataRecord.roomId : undefined,
+        textPreview: messageText ? truncate(messageText, 280) : undefined,
+      });
+    });
+
+    next();
+  });
   app.use(express.json({ limit: "2mb" }));
   bindFrameworkWebhook(app, path, frameworkRuntime.webhookMiddleware);
 
@@ -115,4 +153,8 @@ async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
   });
+}
+
+function truncate(text: string, maxLength: number): string {
+  return text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 1))}...`;
 }
