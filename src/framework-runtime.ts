@@ -161,26 +161,13 @@ export async function sendFrameworkMessage(
   });
   const bot = framework.getBotByRoomId(to);
   if (bot) {
-    webexLogInfo("webex api call begin", {
+    const callMeta = {
       api: "bot.say",
       target: to,
       textLength: text.length,
       textPreview: truncate(text, 280),
-    });
-    try {
-      await bot.say(text);
-      webexLogInfo("webex api call success", {
-        api: "bot.say",
-        target: to,
-      });
-    } catch (err) {
-      webexLogError("webex api call failed", {
-        api: "bot.say",
-        target: to,
-        error: String(err),
-      });
-      throw err;
-    }
+    };
+    await retryWebexApiCall(callMeta, () => bot.say(text));
     webexLogInfo("webex outbound sent via bot room context", { target: to });
     return;
   }
@@ -188,57 +175,27 @@ export async function sendFrameworkMessage(
   const sdk = framework.getWebexSDK();
   if (to.startsWith("person:")) {
     const payload = { toPersonId: to.slice("person:".length), markdown: text };
-    webexLogInfo("webex api call begin", {
+    const callMeta = {
       api: "messages.create",
       mode: "direct",
       target: payload.toPersonId,
       textLength: text.length,
       textPreview: truncate(text, 280),
-    });
-    try {
-      await sdk.messages.create(payload);
-      webexLogInfo("webex api call success", {
-        api: "messages.create",
-        mode: "direct",
-        target: payload.toPersonId,
-      });
-    } catch (err) {
-      webexLogError("webex api call failed", {
-        api: "messages.create",
-        mode: "direct",
-        target: payload.toPersonId,
-        error: String(err),
-      });
-      throw err;
-    }
+    };
+    await retryWebexApiCall(callMeta, () => sdk.messages.create(payload));
     webexLogInfo("webex outbound sent via direct person target", { target: to });
     return;
   }
 
   const payload = { roomId: to, markdown: text };
-  webexLogInfo("webex api call begin", {
+  const callMeta = {
     api: "messages.create",
     mode: "room",
     target: payload.roomId,
     textLength: text.length,
     textPreview: truncate(text, 280),
-  });
-  try {
-    await sdk.messages.create(payload);
-    webexLogInfo("webex api call success", {
-      api: "messages.create",
-      mode: "room",
-      target: payload.roomId,
-    });
-  } catch (err) {
-    webexLogError("webex api call failed", {
-      api: "messages.create",
-      mode: "room",
-      target: payload.roomId,
-      error: String(err),
-    });
-    throw err;
-  }
+  };
+  await retryWebexApiCall(callMeta, () => sdk.messages.create(payload));
   webexLogInfo("webex outbound sent via room target", { target: to });
 }
 
@@ -257,4 +214,145 @@ function safeWebhookHost(rawUrl: string): string {
 
 function truncate(text: string, maxLength: number): string {
   return text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
+type WebexApiCallMeta = {
+  api: string;
+  mode?: string;
+  target: string;
+  textLength?: number;
+  textPreview?: string;
+};
+
+async function retryWebexApiCall<T>(
+  meta: WebexApiCallMeta,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const maxAttempts = 4;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    webexLogInfo("webex api call begin", {
+      ...meta,
+      attempt,
+      maxAttempts,
+    });
+
+    try {
+      const result = await operation();
+      webexLogInfo("webex api call success", {
+        api: meta.api,
+        mode: meta.mode,
+        target: meta.target,
+        attempt,
+      });
+      return result;
+    } catch (err) {
+      lastError = err;
+      const retriable = isRetriableWebexError(err);
+      const isLastAttempt = attempt >= maxAttempts;
+
+      webexLogError("webex api call failed", {
+        api: meta.api,
+        mode: meta.mode,
+        target: meta.target,
+        attempt,
+        maxAttempts,
+        retriable,
+        error: formatErrorForLog(err),
+      });
+
+      if (!retriable || isLastAttempt) {
+        throw err;
+      }
+
+      const delayMs = getRetryDelayMs(attempt);
+      webexLogInfo("webex api call retry scheduled", {
+        api: meta.api,
+        mode: meta.mode,
+        target: meta.target,
+        nextAttempt: attempt + 1,
+        delayMs,
+      });
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "Unknown Webex API error"));
+}
+
+function isRetriableWebexError(err: unknown): boolean {
+  const details = extractErrorDetails(err);
+  if (details.statusCode !== undefined) {
+    if (details.statusCode === 429 || details.statusCode >= 500) {
+      return true;
+    }
+    return false;
+  }
+
+  const haystack = [details.message, details.code, details.causeMessage]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
+
+  return [
+    "networkorcorserror",
+    "socket hang up",
+    "tunneling socket could not be established",
+    "econnreset",
+    "etimedout",
+    "econnrefused",
+    "timeout",
+    "temporarily unavailable",
+    "fetch failed",
+    "network error",
+  ].some((needle) => haystack.includes(needle));
+}
+
+function extractErrorDetails(err: unknown): {
+  message?: string;
+  code?: string;
+  causeMessage?: string;
+  statusCode?: number;
+} {
+  if (!err || typeof err !== "object") {
+    return { message: String(err ?? "") };
+  }
+
+  const record = err as Record<string, unknown>;
+  const cause = record.cause && typeof record.cause === "object" ? (record.cause as Record<string, unknown>) : undefined;
+  const response = record.response && typeof record.response === "object" ? (record.response as Record<string, unknown>) : undefined;
+
+  return {
+    message: typeof record.message === "string" ? record.message : String(err),
+    code: typeof record.code === "string" ? record.code : undefined,
+    causeMessage: typeof cause?.message === "string" ? cause.message : undefined,
+    statusCode:
+      typeof record.statusCode === "number"
+        ? record.statusCode
+        : typeof record.status === "number"
+          ? record.status
+          : typeof response?.statusCode === "number"
+            ? response.statusCode
+            : typeof response?.status === "number"
+              ? response.status
+              : undefined,
+  };
+}
+
+function formatErrorForLog(err: unknown): string {
+  const details = extractErrorDetails(err);
+  return [details.message, details.code, details.causeMessage].filter(Boolean).join(" | ");
+}
+
+function getRetryDelayMs(attempt: number): number {
+  const baseMs = 750;
+  const jitterMs = Math.floor(Math.random() * 250);
+  return baseMs * 2 ** (attempt - 1) + jitterMs;
+}
+
+async function sleep(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
 }
