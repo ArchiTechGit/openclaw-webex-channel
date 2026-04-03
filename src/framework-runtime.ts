@@ -31,6 +31,7 @@ type FrameworkLike = {
   start: () => Promise<boolean> | boolean;
   stop: () => Promise<boolean> | boolean;
   on: (eventName: string, cb: (...args: any[]) => void) => void;
+  hears?: (matcher: string | RegExp, cb: (...args: any[]) => void) => void;
   getBotByRoomId: (roomId: string) => { say: (message: string | Record<string, unknown>) => Promise<unknown> } | null;
   getWebexSDK: () => {
     messages: {
@@ -88,6 +89,13 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
   const webhookMiddleware = webhookFactory(framework) as WebexFrameworkRuntime["webhookMiddleware"];
 
   const attachInboundHandlers = () => {
+    if (typeof framework.hears === "function") {
+      framework.hears(/[\s\S]*/, () => {
+        // Keep this empty catch-all so the framework does not emit "No Hears Called" noise.
+      });
+      webexLogDebug("webex framework hears catch-all registered");
+    }
+
     framework.on("message", (_bot: unknown, trigger: any) => {
       const botEmail = framework.email?.toLowerCase().trim();
       const senderEmail = String(trigger?.person?.emails?.[0] ?? trigger?.personEmail ?? "").toLowerCase().trim();

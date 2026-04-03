@@ -2,11 +2,12 @@ import express from "express";
 import type { Server } from "node:http";
 import { createWebexFrameworkRuntime, type WebexFrameworkRuntime, bindFrameworkWebhook } from "./framework-runtime.js";
 import { parseWebhookUrl, resolveWebexChannelConfig } from "./config-schema.js";
-import { getWebexRuntime, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
+import { getWebexRuntime, setInboundHandler, type WebexInboundEvent, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 export type MonitorWebexOptions = {
   cfg: unknown;
   abortSignal?: AbortSignal;
+  onInboundMessage?: (event: WebexInboundEvent) => Promise<void> | void;
 };
 
 export type MonitorWebexResult = {
@@ -24,7 +25,12 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
     enabled: channelCfg.enabled !== false,
     hasToken: Boolean(channelCfg.token?.trim()),
     hasWebhookUrl: Boolean(channelCfg.webhookUrl?.trim()),
+    hasInboundHandler: typeof options.onInboundMessage === "function",
   });
+
+  if (typeof options.onInboundMessage === "function") {
+    setInboundHandler(options.onInboundMessage);
+  }
 
   if (channelCfg.enabled === false) {
     runtime.log?.debug?.("webex provider disabled");

@@ -53,6 +53,11 @@ export function getWebexRuntime(): WebexRuntime {
   return runtime;
 }
 
+export function setInboundHandler(handler: (event: WebexInboundEvent) => Promise<void> | void): void {
+  runtime = { ...runtime, onInboundMessage: handler };
+  dispatchLog("debug", "webex inbound handler explicitly set");
+}
+
 function normalizeRuntime(next: unknown): WebexRuntime {
   const source = (next && typeof next === "object" ? (next as Record<string, unknown>) : {}) ?? {};
   const sourceRuntime =
@@ -60,11 +65,22 @@ function normalizeRuntime(next: unknown): WebexRuntime {
       ? (source.runtime as Record<string, unknown>)
       : undefined;
 
+  const inboundNames = [
+    "onInboundMessage",
+    "emitInboundMessage",
+    "pushInboundMessage",
+    "receive",
+    "deliver",
+    "dispatch",
+    "onMessage",
+    "handleMessage",
+    "push",
+    "emit",
+  ];
+
   const onInboundMessage =
-    pickFunction(source, ["onInboundMessage", "emitInboundMessage", "pushInboundMessage"]) ??
-    (sourceRuntime
-      ? pickFunction(sourceRuntime, ["onInboundMessage", "emitInboundMessage", "pushInboundMessage"])
-      : undefined);
+    pickFunction(source, inboundNames) ??
+    (sourceRuntime ? pickFunction(sourceRuntime, inboundNames) : undefined);
 
   const log =
     normalizeLogger(source.log) ??

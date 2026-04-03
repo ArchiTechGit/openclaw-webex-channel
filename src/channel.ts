@@ -3,7 +3,7 @@ import type { ChannelPlugin } from "openclaw/plugin-sdk/channel-contract";
 import { WebexChannelConfigSchema, hasConfiguredWebexChannel, resolveWebexChannelConfig } from "./config-schema.js";
 import { monitorWebexProvider } from "./monitor.js";
 import { sendTextWebex } from "./outbound.js";
-import { getWebexRuntime, setWebexRuntime, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
+import { getWebexRuntime, setWebexRuntime, setInboundHandler, type WebexInboundEvent, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 const createChatChannelPluginCompat: (config: any) => any =
   (OpenClawCore as { createChatChannelPlugin?: (config: any) => any }).createChatChannelPlugin ??
@@ -65,6 +65,44 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
     gateway: {
       startAccount: async (ctx: any) => {
         setWebexRuntime(ctx?.runtime ?? ctx);
+
+        // Explicitly scan ctx for the inbound-message dispatch function OpenClaw provides.
+        const inboundHandlerNames = [
+          "onInboundMessage", "emitInboundMessage", "pushInboundMessage",
+          "receive", "deliver", "dispatch", "onMessage", "handleMessage",
+          "push",
+        ];
+        const ctxRecord = ctx && typeof ctx === "object" ? (ctx as Record<string, unknown>) : {};
+        const ctxFunctionKeys = Object.keys(ctxRecord).filter(k => typeof ctxRecord[k] === "function");
+        webexLogDebug("webex gateway ctx function keys", { keys: ctxFunctionKeys });
+
+        let resolvedInboundHandler: ((event: WebexInboundEvent) => Promise<void> | void) | undefined;
+        for (const name of inboundHandlerNames) {
+          if (typeof ctxRecord[name] === "function") {
+            resolvedInboundHandler = (ctxRecord[name] as (event: WebexInboundEvent) => Promise<void> | void).bind(ctx);
+            webexLogDebug("webex gateway inbound handler found", { property: name });
+            break;
+          }
+          const rt = ctxRecord.runtime;
+          if (rt && typeof rt === "object") {
+            const rtRecord = rt as Record<string, unknown>;
+            if (typeof rtRecord[name] === "function") {
+              resolvedInboundHandler = (rtRecord[name] as (event: WebexInboundEvent) => Promise<void> | void).bind(rt);
+              webexLogDebug("webex gateway inbound handler found on ctx.runtime", { property: name });
+              break;
+            }
+          }
+        }
+
+        if (resolvedInboundHandler) {
+          setInboundHandler(resolvedInboundHandler);
+        } else {
+          webexLogError("webex gateway inbound handler NOT found on ctx; messages will not be delivered", {
+            scanned: inboundHandlerNames,
+            ctxFunctionKeys,
+          });
+        }
+
           webexLogInfo("webex gateway startAccount begin", {
             accountId: String(ctx.accountId ?? "default"),
           });
@@ -79,6 +117,7 @@ export const webexPlugin: ChannelPlugin<any, any> = createChatChannelPluginCompa
             provider = await monitorWebexProvider({
               cfg: ctx.cfg,
               abortSignal: ctx.abortSignal,
+              onInboundMessage: resolvedInboundHandler,
             });
           } catch (err) {
             webexLogError("webex gateway startAccount failed", { error: String(err) });
