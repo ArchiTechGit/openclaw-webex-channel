@@ -1,13 +1,12 @@
 import express from "express";
 import type { Server } from "node:http";
-import { createWebexFrameworkRuntime, type WebexFrameworkRuntime, bindFrameworkWebhook } from "./framework-runtime.js";
+import { createWebexFrameworkRuntime, sendFrameworkMessage, type WebexFrameworkRuntime, bindFrameworkWebhook } from "./framework-runtime.js";
 import { parseWebhookUrl, resolveWebexChannelConfig } from "./config-schema.js";
-import { getWebexRuntime, setInboundHandler, type WebexInboundEvent, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
+import { webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 export type MonitorWebexOptions = {
   cfg: unknown;
   abortSignal?: AbortSignal;
-  onInboundMessage?: (event: WebexInboundEvent) => Promise<void> | void;
 };
 
 export type MonitorWebexResult = {
@@ -18,27 +17,21 @@ export type MonitorWebexResult = {
 };
 
 export async function monitorWebexProvider(options: MonitorWebexOptions): Promise<MonitorWebexResult | null> {
-  const runtime = getWebexRuntime();
   const channelCfg = resolveWebexChannelConfig(options.cfg);
 
   webexLogDebug("webex monitor starting", {
     enabled: channelCfg.enabled !== false,
     hasToken: Boolean(channelCfg.token?.trim()),
     hasWebhookUrl: Boolean(channelCfg.webhookUrl?.trim()),
-    hasInboundHandler: typeof options.onInboundMessage === "function",
   });
 
-  if (typeof options.onInboundMessage === "function") {
-    setInboundHandler(options.onInboundMessage);
-  }
-
   if (channelCfg.enabled === false) {
-    runtime.log?.debug?.("webex provider disabled");
+    webexLogDebug("webex provider disabled");
     return null;
   }
 
   if (!channelCfg.token?.trim() || !channelCfg.webhookUrl?.trim()) {
-    runtime.log?.error?.("webex token and webhookUrl are required");
+    webexLogError("webex token and webhookUrl are required");
     return null;
   }
 
@@ -56,7 +49,10 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
     token: channelCfg.token,
     webhookUrl: channelCfg.webhookUrl,
   });
-  frameworkRuntime.attachInboundHandlers();
+  frameworkRuntime.attachInboundHandlers({
+    cfg: options.cfg,
+    send: (roomId, text) => sendFrameworkMessage(frameworkRuntime.framework, roomId, text),
+  });
 
   const app = express();
   app.use((req, res, next) => {
@@ -119,7 +115,7 @@ export async function monitorWebexProvider(options: MonitorWebexOptions): Promis
     webexLogInfo("webex monitor shutdown complete", { port, path });
   };
 
-  runtime.log?.info?.("webex provider started", { port, path });
+  webexLogInfo("webex provider started", { port, path });
 
   return {
     runtime: frameworkRuntime,

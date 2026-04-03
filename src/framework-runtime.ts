@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createRequire } from "node:module";
-import { getWebexRuntime, type WebexInboundEvent, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
+import { dispatchInboundToAgent, type WebexInboundEvent, webexLogDebug, webexLogError, webexLogInfo } from "./runtime.js";
 
 const require = createRequire(import.meta.url);
 
@@ -45,10 +45,15 @@ export type WebexFrameworkConfig = {
   webhookUrl: string;
 };
 
+type AttachHandlersOpts = {
+  cfg: unknown;
+  send: (roomId: string, text: string) => Promise<void>;
+};
+
 export type WebexFrameworkRuntime = {
   framework: FrameworkLike;
   webhookMiddleware: (req: unknown, res: unknown, next?: (err?: unknown) => void) => void;
-  attachInboundHandlers: () => void;
+  attachInboundHandlers: (opts: AttachHandlersOpts) => void;
 };
 
 export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): WebexFrameworkRuntime {
@@ -88,7 +93,7 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
 
   const webhookMiddleware = webhookFactory(framework) as WebexFrameworkRuntime["webhookMiddleware"];
 
-  const attachInboundHandlers = () => {
+  const attachInboundHandlers = (opts: AttachHandlersOpts) => {
     if (typeof framework.hears === "function") {
       framework.hears(/[\s\S]*/, () => {
         // Keep this empty catch-all so the framework does not emit "No Hears Called" noise.
@@ -132,7 +137,7 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
         raw: trigger,
       };
 
-      void Promise.resolve(getWebexRuntime().onInboundMessage?.(event)).catch((err) => {
+      void dispatchInboundToAgent(event, opts.cfg, (text) => opts.send(event.roomId, text)).catch((err) => {
         webexLogError("webex inbound dispatch failed", { error: String(err) });
       });
     });

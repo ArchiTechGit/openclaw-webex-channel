@@ -1,3 +1,64 @@
+// ─── Minimal PluginRuntime types ─────────────────────────────────────────────
+// Based on openclaw dist/plugin-sdk/plugins/runtime/types.d.ts (version 2026.x)
+
+type PluginReplyDispatcher = {
+  sendToolResult: (payload: { text?: string }) => boolean;
+  sendBlockReply: (payload: { text?: string }) => boolean;
+  sendFinalReply: (payload: { text?: string }) => boolean;
+  waitForIdle: () => Promise<void>;
+  getQueuedCounts: () => Record<string, number>;
+  markComplete: () => void;
+};
+
+type PluginRuntime = {
+  channel: {
+    routing: {
+      resolveAgentRoute: (input: {
+        cfg: unknown;
+        channel: string;
+        accountId?: string | null;
+        peer?: { kind: string; id: string } | null;
+      }) => {
+        agentId: string;
+        channel: string;
+        accountId: string;
+        sessionKey: string;
+        mainSessionKey: string;
+      };
+    };
+    reply: {
+      dispatchReplyFromConfig: (params: {
+        ctx: Record<string, unknown>;
+        cfg: unknown;
+        dispatcher: PluginReplyDispatcher;
+      }) => Promise<{ queuedFinal: boolean; counts: Record<string, number> }>;
+      createReplyDispatcherWithTyping: (options: {
+        deliver: (payload: { text?: string }) => Promise<void>;
+        onIdle?: () => void;
+      }) => { dispatcher: PluginReplyDispatcher; markDispatchIdle: () => void };
+      finalizeInboundContext: <T extends Record<string, unknown>>(ctx: T) => T & { CommandAuthorized: boolean };
+      formatAgentEnvelope: (params: {
+        channel: string;
+        from: string;
+        timestamp?: Date | null;
+        previousTimestamp?: Date | null;
+        envelope?: unknown;
+        body: string;
+      }) => string;
+      resolveEnvelopeFormatOptions: (params: { cfg: unknown; sessionKey: string }) => unknown;
+    };
+    session: {
+      resolveStorePath: (storePath: unknown, opts: { agentId: string }) => string;
+      recordInboundSession: (params: {
+        storePath: string;
+        sessionKey: string;
+        ctx: Record<string, unknown>;
+        onRecordError?: (err: unknown) => void;
+      }) => Promise<void>;
+    };
+  };
+};
+
 type RuntimeLogMethod = (...args: unknown[]) => void;
 
 type RuntimeLogger = {
@@ -15,12 +76,9 @@ export type WebexInboundEvent = {
   raw?: unknown;
 };
 
-export type WebexRuntime = {
-  log?: RuntimeLogger;
-  onInboundMessage?: (event: WebexInboundEvent) => Promise<void> | void;
-};
-
-let runtime: WebexRuntime = {};
+// Module-level state: separate logger and PluginRuntime for dispatch.
+let logger: RuntimeLogger | undefined;
+let pluginRuntime: PluginRuntime | undefined;
 
 export function webexLogInfo(msg: string, data?: unknown): void {
   dispatchLog("info", msg, data);
@@ -34,65 +92,165 @@ export function webexLogError(msg: string, data?: unknown): void {
   dispatchLog("error", msg, data);
 }
 
-export function setWebexRuntime(next: WebexRuntime | unknown): void {
-  const normalized = normalizeRuntime(next);
-  runtime = {
-    ...runtime,
-    ...normalized,
-    log: normalized.log ?? runtime.log,
-    onInboundMessage: normalized.onInboundMessage ?? runtime.onInboundMessage,
-  };
+export function setWebexRuntime(next: unknown): void {
+  const source = toRecord(next);
+  const sourceRuntime = toRecord(source.runtime);
+
+  const resolvedLogger =
+    normalizeLogger(source.log) ??
+    normalizeLogger(source.logger) ??
+    normalizeLogger(sourceRuntime.log) ??
+    normalizeLogger(sourceRuntime.logger);
+
+  if (resolvedLogger) {
+    logger = resolvedLogger;
+  }
+
+  const resolvedRuntime =
+    detectPluginRuntime(source) ?? detectPluginRuntime(sourceRuntime);
+  if (resolvedRuntime) {
+    pluginRuntime = resolvedRuntime;
+  }
 
   dispatchLog("debug", "webex runtime updated", {
-    hasLogger: Boolean(runtime.log),
-    hasInboundHandler: typeof runtime.onInboundMessage === "function",
+    hasLogger: Boolean(logger),
+    hasPluginRuntime: Boolean(pluginRuntime),
   });
 }
 
-export function getWebexRuntime(): WebexRuntime {
-  return runtime;
+export function getPluginRuntime(): PluginRuntime | undefined {
+  return pluginRuntime;
 }
 
-export function setInboundHandler(handler: (event: WebexInboundEvent) => Promise<void> | void): void {
-  runtime = { ...runtime, onInboundMessage: handler };
-  dispatchLog("debug", "webex inbound handler explicitly set");
-}
+// ─── Agent dispatch ───────────────────────────────────────────────────────────
 
-function normalizeRuntime(next: unknown): WebexRuntime {
-  const source = (next && typeof next === "object" ? (next as Record<string, unknown>) : {}) ?? {};
-  const sourceRuntime =
-    source.runtime && typeof source.runtime === "object"
-      ? (source.runtime as Record<string, unknown>)
-      : undefined;
+export async function dispatchInboundToAgent(
+  event: WebexInboundEvent,
+  cfg: unknown,
+  send: (text: string) => Promise<void>,
+): Promise<void> {
+  const core = pluginRuntime;
+  if (!core) {
+    webexLogError("webex dispatch skipped: PluginRuntime not initialized");
+    return;
+  }
 
-  const inboundNames = [
-    "onInboundMessage",
-    "emitInboundMessage",
-    "pushInboundMessage",
-    "receive",
-    "deliver",
-    "dispatch",
-    "onMessage",
-    "handleMessage",
-    "push",
-    "emit",
-  ];
+  const peerId = event.personId ?? event.personEmail ?? event.roomId;
+  const chatType = "direct";
 
-  const onInboundMessage =
-    pickFunction(source, inboundNames) ??
-    (sourceRuntime ? pickFunction(sourceRuntime, inboundNames) : undefined);
+  const route = core.channel.routing.resolveAgentRoute({
+    cfg,
+    channel: "webex",
+    peer: { kind: chatType, id: peerId },
+  });
 
-  const log =
-    normalizeLogger(source.log) ??
-    normalizeLogger(source.logger) ??
-    (sourceRuntime
-      ? normalizeLogger(sourceRuntime.log) ?? normalizeLogger(sourceRuntime.logger)
-      : undefined);
+  webexLogDebug("webex dispatch routing resolved", {
+    sessionKey: route.sessionKey,
+    agentId: route.agentId,
+    accountId: route.accountId,
+  });
 
-  return {
-    log,
-    onInboundMessage,
+  const timestamp = new Date();
+
+  const envelope = core.channel.reply.formatAgentEnvelope({
+    channel: "Webex",
+    from: event.personEmail ?? event.personId ?? event.roomId,
+    timestamp,
+    previousTimestamp: null,
+    body: event.text,
+  });
+
+  const rawCtx: Record<string, unknown> = {
+    Body: envelope,
+    BodyForAgent: event.text,
+    RawBody: event.text,
+    CommandBody: event.text,
+    BodyForCommands: event.text,
+    From: event.personEmail ? `webex:${event.personEmail}` : `webex:${event.roomId}`,
+    To: event.roomId,
+    SessionKey: route.sessionKey,
+    AccountId: route.accountId,
+    ChatType: chatType,
+    ConversationLabel: event.personEmail ?? event.personId ?? event.roomId,
+    SenderName: event.personEmail,
+    SenderId: event.personId ?? event.personEmail,
+    Provider: "webex",
+    Surface: "webex",
+    MessageSid: event.messageId,
+    Timestamp: timestamp.getTime(),
+    WasMentioned: true,
+    OriginatingChannel: "webex",
+    OriginatingTo: event.roomId,
   };
+
+  const ctxPayload = core.channel.reply.finalizeInboundContext(rawCtx);
+
+  try {
+    const storePath = core.channel.session.resolveStorePath(
+      (cfg as { session?: { store?: unknown } } | null)?.session?.store,
+      { agentId: route.agentId },
+    );
+    await core.channel.session.recordInboundSession({
+      storePath,
+      sessionKey: route.sessionKey,
+      ctx: ctxPayload,
+      onRecordError: (err) => {
+        webexLogDebug("webex session record failed (non-fatal)", { error: String(err) });
+      },
+    });
+  } catch (err) {
+    webexLogDebug("webex session record threw (non-fatal)", { error: String(err) });
+  }
+
+  const { dispatcher } = core.channel.reply.createReplyDispatcherWithTyping({
+    deliver: async (payload) => {
+      const text = payload.text ?? "";
+      if (!text.trim()) return;
+      webexLogDebug("webex dispatch delivering reply", { textLength: text.length });
+      try {
+        await send(text);
+      } catch (err) {
+        webexLogError("webex dispatch deliver failed", { error: String(err) });
+        throw err;
+      }
+    },
+  });
+
+  webexLogInfo("webex dispatching to agent", {
+    agentId: route.agentId,
+    sessionKey: route.sessionKey,
+    roomId: event.roomId,
+  });
+
+  const result = await core.channel.reply.dispatchReplyFromConfig({
+    cfg,
+    ctx: ctxPayload,
+    dispatcher,
+  });
+
+  webexLogInfo("webex dispatch complete", {
+    queuedFinal: result.queuedFinal,
+    counts: result.counts,
+  });
+}
+
+// ─── Internal helpers ──────────────────────────────────────────────────────────
+
+function detectPluginRuntime(source: Record<string, unknown>): PluginRuntime | undefined {
+  const ch = toRecord(source.channel);
+  const routing = toRecord(ch.routing);
+  const reply = toRecord(ch.reply);
+  if (
+    typeof routing.resolveAgentRoute === "function" &&
+    typeof reply.dispatchReplyFromConfig === "function"
+  ) {
+    return source as unknown as PluginRuntime;
+  }
+  return undefined;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 function normalizeLogger(candidate: unknown): RuntimeLogger | undefined {
@@ -123,8 +281,8 @@ function pickFunction(source: Record<string, unknown>, names: string[]): Runtime
 }
 
 function dispatchLog(level: "info" | "debug" | "error", msg: string, data?: unknown): void {
-  const logger = runtime.log;
-  const method = logger?.[level] ?? (level === "debug" ? logger?.info : undefined);
+  const log = logger;
+  const method = log?.[level] ?? (level === "debug" ? log?.info : undefined);
   if (method) {
     invokeLoggerMethod(method, msg, data);
     return;
