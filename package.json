@@ -1,6 +1,6 @@
 {
   "name": "@richwats/openclaw-webex",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "OpenClaw Cisco Webex channel plugin with inbound routing and automatic retry handling",
   "type": "module",
   "main": "./dist/index.js",
@@ -59,7 +59,7 @@
   },
   "openclaw": {
     "extensions": [
-      "./index.ts"
+      "./dist/index.js"
     ]
   }
 }

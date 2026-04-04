@@ -30,7 +30,7 @@ export { webexPlugin } from "./src/channel.js";
 export { setWebexRuntime } from "./src/runtime.js";
 
 export default defineChannelPluginEntryCompat({
-  id: "webex",
+  id: "openclaw-webex",
   name: "Cisco Webex",
   description: "Cisco Webex channel plugin (webex-node-bot-framework)",
   plugin: webexPlugin,
