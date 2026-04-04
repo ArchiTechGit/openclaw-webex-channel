@@ -1,13 +1,52 @@
 {
-  "name": "@openclaw/webex",
-  "version": "0.1.0",
-  "private": true,
-  "description": "OpenClaw Cisco Webex channel plugin",
+  "name": "@richwats/openclaw-webex",
+  "version": "0.2.0",
+  "description": "OpenClaw Cisco Webex channel plugin with inbound routing and automatic retry handling",
   "type": "module",
-  "main": "./index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "keywords": [
+    "openclaw",
+    "webex",
+    "cisco",
+    "channel-plugin",
+    "bot",
+    "chat",
+    "integration"
+  ],
+  "author": "Richard Watson",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richwats/openclaw-webex-channel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/richwats/openclaw-webex-channel/issues"
+  },
+  "homepage": "https://github.com/richwats/openclaw-webex-channel#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build && npm run check",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "express": "^4.21.2",
