@@ -36,6 +36,7 @@ type FrameworkLike = {
   getWebexSDK: () => {
     messages: {
       create: (payload: Record<string, unknown>) => Promise<unknown>;
+      delete?: (messageId: string) => Promise<unknown>;
     };
   };
 };
@@ -137,9 +138,36 @@ export function createWebexFrameworkRuntime(config: WebexFrameworkConfig): Webex
         raw: trigger,
       };
 
-      void dispatchInboundToAgent(event, opts.cfg, (text) => opts.send(event.roomId, text)).catch((err) => {
-        webexLogError("webex inbound dispatch failed", { error: String(err) });
-      });
+      void (async () => {
+        const thinking = await sendThinkingMessage(framework, event.roomId);
+        let replied = false;
+
+        const clearThinking = async () => {
+          if (!thinking?.id) {
+            return;
+          }
+          await deleteThinkingMessage(framework, thinking.id, event.roomId);
+        };
+
+        try {
+          await dispatchInboundToAgent(event, opts.cfg, async (replyText) => {
+            if (!replied) {
+              replied = true;
+              await clearThinking();
+            }
+            await opts.send(event.roomId, replyText);
+          });
+
+          if (!replied) {
+            await clearThinking();
+            await sendNoResponseWarning(framework, event.roomId);
+          }
+        } catch (err) {
+          await clearThinking();
+          await sendNoResponseWarning(framework, event.roomId);
+          webexLogError("webex inbound dispatch failed", { error: String(err) });
+        }
+      })();
     });
   };
 
@@ -214,6 +242,72 @@ function safeWebhookHost(rawUrl: string): string {
 
 function truncate(text: string, maxLength: number): string {
   return text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
+type ThinkingMessage = {
+  id?: string;
+};
+
+async function sendThinkingMessage(framework: FrameworkLike, roomId: string): Promise<ThinkingMessage | null> {
+  const sdk = framework.getWebexSDK();
+  const payload = { roomId, markdown: "Thinking..." };
+
+  try {
+    const result = await retryWebexApiCall(
+      { api: "messages.create", mode: "thinking", target: roomId },
+      () => sdk.messages.create(payload),
+    );
+    const record = result && typeof result === "object" ? (result as Record<string, unknown>) : undefined;
+    const id = typeof record?.id === "string" ? record.id : undefined;
+    return { id };
+  } catch (err) {
+    webexLogDebug("webex thinking message skipped", {
+      roomId,
+      error: formatErrorForLog(err),
+    });
+    return null;
+  }
+}
+
+async function deleteThinkingMessage(framework: FrameworkLike, messageId: string, roomId: string): Promise<void> {
+  const sdk = framework.getWebexSDK();
+  if (typeof sdk.messages.delete !== "function") {
+    webexLogDebug("webex thinking message delete unavailable", { roomId, messageId });
+    return;
+  }
+
+  try {
+    await retryWebexApiCall(
+      { api: "messages.delete", mode: "thinking", target: roomId },
+      () => sdk.messages.delete!(messageId),
+    );
+  } catch (err) {
+    webexLogDebug("webex thinking message delete failed", {
+      roomId,
+      messageId,
+      error: formatErrorForLog(err),
+    });
+  }
+}
+
+async function sendNoResponseWarning(framework: FrameworkLike, roomId: string): Promise<void> {
+  const sdk = framework.getWebexSDK();
+  const payload = {
+    roomId,
+    markdown: "I couldn't generate a response right now. Please try again.",
+  };
+
+  try {
+    await retryWebexApiCall(
+      { api: "messages.create", mode: "warning", target: roomId },
+      () => sdk.messages.create(payload),
+    );
+  } catch (err) {
+    webexLogError("webex warning message failed", {
+      roomId,
+      error: formatErrorForLog(err),
+    });
+  }
 }
 
 type WebexApiCallMeta = {
