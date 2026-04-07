@@ -36,6 +36,7 @@ type FrameworkLike = {
   getWebexSDK: () => {
     messages: {
       create: (payload: Record<string, unknown>) => Promise<unknown>;
+      remove?: (messageId: string) => Promise<unknown>;
       delete?: (messageId: string) => Promise<unknown>;
     };
   };
@@ -271,15 +272,22 @@ async function sendThinkingMessage(framework: FrameworkLike, roomId: string): Pr
 
 async function deleteThinkingMessage(framework: FrameworkLike, messageId: string, roomId: string): Promise<void> {
   const sdk = framework.getWebexSDK();
-  if (typeof sdk.messages.delete !== "function") {
+  const removeMessage =
+    typeof sdk.messages.remove === "function"
+      ? sdk.messages.remove.bind(sdk.messages)
+      : typeof sdk.messages.delete === "function"
+        ? sdk.messages.delete.bind(sdk.messages)
+        : undefined;
+
+  if (!removeMessage) {
     webexLogDebug("webex thinking message delete unavailable", { roomId, messageId });
     return;
   }
 
   try {
     await retryWebexApiCall(
-      { api: "messages.delete", mode: "thinking", target: roomId },
-      () => sdk.messages.delete!(messageId),
+      { api: "messages.remove", mode: "thinking", target: roomId },
+      () => removeMessage(messageId),
     );
   } catch (err) {
     webexLogDebug("webex thinking message delete failed", {
