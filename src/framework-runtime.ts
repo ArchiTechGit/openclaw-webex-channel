@@ -455,8 +455,12 @@ type AdaptiveCardAttachment = {
 
 function createWebexAdaptiveMessage(text: string): {
   markdown: string;
-  attachments: AdaptiveCardAttachment[];
+  attachments?: AdaptiveCardAttachment[];
 } {
+  if (!hasMarkdownSyntax(text)) {
+    return { markdown: text };
+  }
+
   return {
     markdown: text,
     attachments: [
@@ -466,6 +470,38 @@ function createWebexAdaptiveMessage(text: string): {
       },
     ],
   };
+}
+
+function hasMarkdownSyntax(text: string): boolean {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    if (/^#{1,6}\s+/.test(trimmed)) return true;
+    if (/^\s*([-*+])\s+/.test(line)) return true;
+    if (/^\s*\d+\.\s+/.test(line)) return true;
+    if (/^\s*>\s?/.test(line)) return true;
+    if (/^\s*([-*_]){3,}\s*$/.test(trimmed)) return true;
+    if (/^```/.test(trimmed)) return true;
+    if (/`[^`]+`/.test(line)) return true;
+    if (/\[[^\]]+\]\([^\)]+\)/.test(line)) return true;
+    if (/\*\*[^*]+\*\*/.test(line) || /_[^_]+_/.test(line) || /\*[^*]+\*/.test(line)) return true;
+
+    if (
+      looksLikeMarkdownTableRow(trimmed) &&
+      i + 1 < lines.length &&
+      isMarkdownTableSeparator(lines[i + 1] ?? "")
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function createAdaptiveCardFromText(text: string): Record<string, unknown> {
