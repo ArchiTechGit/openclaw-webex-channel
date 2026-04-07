@@ -1,8 +1,8 @@
 import * as OpenClawCore from "openclaw/plugin-sdk/core";
 
-const buildChannelConfigSchemaCompat: <T>(schema: T) => T =
+const buildChannelConfigSchemaCompat: <T>(schema: T) => T | { schema: T } =
   (OpenClawCore as { buildChannelConfigSchema?: <T>(schema: T) => T }).buildChannelConfigSchema ??
-  ((nextSchema) => nextSchema);
+  ((nextSchema) => ({ schema: nextSchema }));
 
 export type WebexChannelConfig = {
   enabled?: boolean;

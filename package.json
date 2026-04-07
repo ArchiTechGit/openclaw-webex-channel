@@ -1,6 +1,6 @@
 {
   "name": "@richwats/webex",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "OpenClaw Cisco Webex channel plugin with inbound routing and automatic retry handling",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/richwats/openclaw-webex-channel.git"
+    "url": "git+https://github.com/richwats/openclaw-webex-channel.git"
   },
   "bugs": {
     "url": "https://github.com/richwats/openclaw-webex-channel/issues"
