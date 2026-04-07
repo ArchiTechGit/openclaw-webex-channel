@@ -189,6 +189,7 @@ export async function sendFrameworkMessage(
     textLength: text.length,
   });
   const bot = framework.getBotByRoomId(to);
+  const messagePayload = createWebexAdaptiveMessage(text);
   if (bot) {
     const callMeta = {
       api: "bot.say",
@@ -196,14 +197,14 @@ export async function sendFrameworkMessage(
       textLength: text.length,
       textPreview: truncate(text, 280),
     };
-    await retryWebexApiCall(callMeta, () => bot.say(text));
+    await retryWebexApiCall(callMeta, () => bot.say(messagePayload));
     webexLogInfo("webex outbound sent via bot room context", { target: to });
     return;
   }
 
   const sdk = framework.getWebexSDK();
   if (to.startsWith("person:")) {
-    const payload = { toPersonId: to.slice("person:".length), markdown: text };
+    const payload = { toPersonId: to.slice("person:".length), ...messagePayload };
     const callMeta = {
       api: "messages.create",
       mode: "direct",
@@ -216,7 +217,7 @@ export async function sendFrameworkMessage(
     return;
   }
 
-  const payload = { roomId: to, markdown: text };
+  const payload = { roomId: to, ...messagePayload };
   const callMeta = {
     api: "messages.create",
     mode: "room",
@@ -251,7 +252,7 @@ type ThinkingMessage = {
 
 async function sendThinkingMessage(framework: FrameworkLike, roomId: string): Promise<ThinkingMessage | null> {
   const sdk = framework.getWebexSDK();
-  const payload = { roomId, markdown: "Thinking..." };
+  const payload = { roomId, ...createWebexAdaptiveMessage("Thinking...") };
 
   try {
     const result = await retryWebexApiCall(
@@ -302,7 +303,7 @@ async function sendNoResponseWarning(framework: FrameworkLike, roomId: string): 
   const sdk = framework.getWebexSDK();
   const payload = {
     roomId,
-    markdown: "I couldn't generate a response right now. Please try again.",
+    ...createWebexAdaptiveMessage("I couldn't generate a response right now. Please try again."),
   };
 
   try {
@@ -445,6 +446,239 @@ function extractErrorDetails(err: unknown): {
 function formatErrorForLog(err: unknown): string {
   const details = extractErrorDetails(err);
   return [details.message, details.code, details.causeMessage].filter(Boolean).join(" | ");
+}
+
+type AdaptiveCardAttachment = {
+  contentType: "application/vnd.microsoft.card.adaptive";
+  content: Record<string, unknown>;
+};
+
+function createWebexAdaptiveMessage(text: string): {
+  markdown: string;
+  attachments: AdaptiveCardAttachment[];
+} {
+  return {
+    markdown: text,
+    attachments: [
+      {
+        contentType: "application/vnd.microsoft.card.adaptive",
+        content: createAdaptiveCardFromText(text),
+      },
+    ],
+  };
+}
+
+function createAdaptiveCardFromText(text: string): Record<string, unknown> {
+  const body = buildAdaptiveCardBody(text);
+  return {
+    $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+    type: "AdaptiveCard",
+    version: "1.3",
+    body: body.length > 0 ? body : [createTextBlock(" ")],
+  };
+}
+
+function buildAdaptiveCardBody(text: string): Record<string, unknown>[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const body: Record<string, unknown>[] = [];
+  let paragraph: string[] = [];
+  let inCodeBlock = false;
+  let codeLines: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) {
+      return;
+    }
+    body.push(createTextBlock(paragraph.join("\n")));
+    paragraph = [];
+  };
+
+  const flushCodeBlock = () => {
+    if (codeLines.length === 0) {
+      return;
+    }
+    body.push(createTextBlock(codeLines.join("\n"), { fontType: "Monospace", spacing: "Small" }));
+    codeLines = [];
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const rawLine = lines[i] ?? "";
+    const line = rawLine.trimEnd();
+
+    if (line.trim().startsWith("```")) {
+      flushParagraph();
+      if (inCodeBlock) {
+        flushCodeBlock();
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(rawLine);
+      continue;
+    }
+
+    if (
+      looksLikeMarkdownTableRow(line) &&
+      i + 1 < lines.length &&
+      isMarkdownTableSeparator(lines[i + 1] ?? "")
+    ) {
+      flushParagraph();
+
+      const headers = parseMarkdownTableRow(line);
+      const rows: string[][] = [];
+      i += 1; // consume separator line
+
+      while (i + 1 < lines.length && looksLikeMarkdownTableRow(lines[i + 1] ?? "")) {
+        i += 1;
+        const row = parseMarkdownTableRow(lines[i] ?? "");
+        if (row.length > 0) {
+          rows.push(row);
+        }
+      }
+
+      body.push(...createMarkdownTableBlocks(headers, rows));
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushParagraph();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      flushParagraph();
+      body.push(createHeadingBlock(heading[2], heading[1].length));
+      continue;
+    }
+
+    const bullet = line.match(/^\s*([-*+])\s+(.*)$/);
+    if (bullet) {
+      flushParagraph();
+      body.push(createTextBlock(`• ${bullet[2]}`));
+      continue;
+    }
+
+    const ordered = line.match(/^\s*(\d+)\.\s+(.*)$/);
+    if (ordered) {
+      flushParagraph();
+      body.push(createTextBlock(`${ordered[1]}. ${ordered[2]}`));
+      continue;
+    }
+
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (quote) {
+      flushParagraph();
+      body.push(createTextBlock(`❝ ${quote[1]}`, { isSubtle: true, spacing: "Small" }));
+      continue;
+    }
+
+    if (/^\s*([-*_]){3,}\s*$/.test(line)) {
+      flushParagraph();
+      body.push({ type: "TextBlock", text: "────────", wrap: true, spacing: "Medium", isSubtle: true });
+      continue;
+    }
+
+    paragraph.push(line);
+  }
+
+  flushParagraph();
+  flushCodeBlock();
+
+  return body;
+}
+
+function createHeadingBlock(text: string, level: number): Record<string, unknown> {
+  if (level <= 1) {
+    return createTextBlock(text, { weight: "Bolder", size: "Large" });
+  }
+  if (level === 2) {
+    return createTextBlock(text, { weight: "Bolder", size: "Medium" });
+  }
+  return createTextBlock(text, { weight: "Bolder" });
+}
+
+function looksLikeMarkdownTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.includes("|") && trimmed.replace(/\|/g, "").trim().length > 0;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = parseMarkdownTableRow(line);
+  if (cells.length === 0) {
+    return false;
+  }
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function parseMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const withoutLeading = trimmed.startsWith("|") ? trimmed.slice(1) : trimmed;
+  const withoutOuterPipes = withoutLeading.endsWith("|")
+    ? withoutLeading.slice(0, -1)
+    : withoutLeading;
+
+  return withoutOuterPipes.split("|").map((cell) => cell.trim());
+}
+
+function createMarkdownTableBlocks(headers: string[], rows: string[][]): Record<string, unknown>[] {
+  const columnCount = Math.max(
+    headers.length,
+    rows.reduce((max, row) => Math.max(max, row.length), 0),
+    1,
+  );
+
+  const normalizeRow = (row: string[]): string[] => {
+    const out = [...row];
+    while (out.length < columnCount) {
+      out.push("");
+    }
+    return out.slice(0, columnCount);
+  };
+
+  const blocks: Record<string, unknown>[] = [];
+  blocks.push(createTableRowColumnSet(normalizeRow(headers), true));
+  blocks.push({ type: "TextBlock", text: "────────", wrap: true, spacing: "Small", isSubtle: true });
+
+  for (const row of rows) {
+    blocks.push(createTableRowColumnSet(normalizeRow(row), false));
+  }
+
+  return blocks;
+}
+
+function createTableRowColumnSet(cells: string[], isHeader: boolean): Record<string, unknown> {
+  return {
+    type: "ColumnSet",
+    spacing: "Small",
+    columns: cells.map((cell) => ({
+      type: "Column",
+      width: "stretch",
+      items: [
+        createTextBlock(cell || " ", isHeader ? { weight: "Bolder" } : undefined),
+      ],
+    })),
+  };
+}
+
+function createTextBlock(
+  text: string,
+  extra?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    type: "TextBlock",
+    text,
+    wrap: true,
+    ...extra,
+  };
 }
 
 function getRetryDelayMs(attempt: number): number {
