@@ -1,3 +1,5 @@
+import { buildChannelConfigSchema } from "openclaw/plugin-sdk/channel-config-schema";
+
 export type WebexChannelConfig = {
   enabled?: boolean;
   token?: string;
@@ -17,34 +19,57 @@ const schema: JsonSchemaObject = {
   type: "object",
   additionalProperties: false,
   properties: {
-    enabled: { type: "boolean", default: true },
+    enabled: {
+      type: "boolean",
+      default: true,
+      title: "Enabled",
+      description: "Enable or disable the Webex channel.",
+    },
     token: {
       type: "string",
       minLength: 1,
+      title: "Bot Token",
       description: "Webex bot access token.",
+      "x-ui": {
+        secret: true,
+        tags: ["security", "auth", "webex", "channels"],
+      },
     },
     webhookUrl: {
       type: "string",
       minLength: 1,
+      title: "Webhook URL",
       description: "Public Webex webhook callback URL for this plugin.",
+      format: "uri",
+      "x-ui": {
+        tags: ["network", "webhook", "channels"],
+      },
     },
     defaultTo: {
       type: "string",
       minLength: 1,
+      title: "Default Target",
       description: "Default Webex roomId target for outbound messages.",
+      "x-ui": {
+        tags: ["routing", "channels"],
+      },
     },
     listenPort: {
-      type: "number",
+      type: "integer",
       minimum: 1,
       maximum: 65535,
+      title: "Listen Port",
       description:
         "Local HTTP listen port override for the Webex webhook server (useful when 3978 is already in use).",
+      "x-ui": {
+        tags: ["network", "channels"],
+      },
     },
   },
   required: ["token", "webhookUrl"],
 };
 
-export const WebexChannelConfigSchema = schema;
+export const WebexChannelConfigSchema = buildChannelConfigSchema(schema);
 
 export function resolveWebexChannelConfig(cfg: unknown): WebexChannelConfig {
   const channelCfg = (cfg as { channels?: { webex?: WebexChannelConfig } } | undefined)?.channels?.webex;
