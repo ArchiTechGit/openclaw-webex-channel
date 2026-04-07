@@ -1,14 +1,49 @@
 # OpenClaw Webex Channel Plugin
 
-Webex channel plugin for OpenClaw using webex-node-bot-framework.
+Cisco Webex channel plugin for OpenClaw, built on `webex-node-bot-framework`.
 
-## Required Configuration
+## Highlights
 
-Set both values in your OpenClaw config under channels.webex:
+- Inbound messages are routed to OpenClaw agent dispatch via the PluginRuntime channel APIs.
+- Outbound Webex API calls include retry with backoff for transient network/proxy failures.
+- Temporary `Thinking...` placeholder message is sent immediately on inbound message receipt.
+- Placeholder is deleted when the first LLM reply is sent.
+- If no reply is produced, a fallback warning message is posted asking the user to try again.
 
-- token: Webex bot token
-- webhookUrl: Public callback URL that Webex calls for events
-- listenPort (optional): Local port for the plugin webhook server if default/fallback port is already in use
+## Installation
+
+```bash
+npm install @richwats/webex
+```
+
+This package exports the compiled extension entry at `./dist/index.js`.
+
+## OpenClaw Extension Entry
+
+Package metadata already declares:
+
+```json
+{
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  }
+}
+```
+
+## Channel Configuration
+
+Configure under `channels.webex` in your OpenClaw config.
+
+Required fields:
+
+- `token`: Webex bot token
+- `webhookUrl`: public callback URL Webex calls for events
+
+Optional fields:
+
+- `enabled`: boolean (default `true`)
+- `defaultTo`: default outbound destination (`roomId` or `person:<personId>` pattern when used by outbound tools)
+- `listenPort`: local webhook server port override
 
 Example:
 
@@ -26,37 +61,29 @@ Example:
 }
 ```
 
-## Enable in OpenClaw
+## Control UI
 
-1. Place this plugin in your OpenClaw extensions path (for example `.openclaw/extensions/webex`).
-2. Ensure OpenClaw loads the plugin entry from `index.ts` (or built output if your runtime requires compiled JS).
-3. Enable the channel in your OpenClaw config by setting `channels.webex.enabled: true` and providing `token` + `webhookUrl`.
-4. Restart the OpenClaw gateway so the channel plugin is registered and started.
+The plugin provides structured channel schema fields for the Channels page in Control UI:
 
-Minimal enablement example:
+- `Enabled`
+- `Bot Token` (marked as secret)
+- `Webhook URL`
+- `Default Target`
+- `Listen Port`
 
-```json
-{
-  "channels": {
-    "webex": {
-      "enabled": true,
-      "token": "YOUR_WEBEX_BOT_TOKEN",
-      "webhookUrl": "https://your-public-host.example.com/webex/webhook"
-    }
-  }
-}
+## Runtime Notes
+
+- Inbound bot-authored messages are ignored to prevent loops.
+- Listen port resolution order: `channels.webex.listenPort` -> `PORT` env var -> explicit `webhookUrl` port -> `3978`.
+- If running behind a reverse proxy, route your `webhookUrl` path to this plugin listener.
+
+## Development
+
+```bash
+npm run check
+npm run build
 ```
 
-## Behavior
+## License
 
-- Receives inbound messages from Webex via webhook middleware from webex-node-bot-framework.
-- Sends outbound text messages to a target roomId, or person:<personId>.
-- Ignores bot-authored inbound messages to prevent loops.
-
-## Local OpenShell Notes
-
-- Ensure webhookUrl is publicly reachable from Webex cloud.
-- The plugin listens on `PORT` when set, otherwise uses webhookUrl explicit port, otherwise falls back to `3978`.
-- To avoid `EADDRINUSE` port conflicts (common when another channel uses 3978), set `channels.webex.listenPort`.
-- If running behind a reverse proxy in OpenShell, route webhookUrl path to this plugin service.
-- The plugin includes a Node compatibility shim for legacy Webex dependencies that mutate `globalThis.navigator`.
+Apache-2.0. See the LICENSE file.
