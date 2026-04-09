@@ -6,6 +6,20 @@ export type WebexChannelConfig = {
   listenPort?: number;
 };
 
+type ChannelConfigUiHint = {
+  label?: string;
+  help?: string;
+  tags?: string[];
+  advanced?: boolean;
+  sensitive?: boolean;
+  placeholder?: string;
+};
+
+type ChannelConfigSchema = {
+  schema: JsonSchemaObject;
+  uiHints?: Record<string, ChannelConfigUiHint>;
+};
+
 type JsonSchemaObject = {
   type: "object";
   additionalProperties?: boolean;
@@ -67,7 +81,24 @@ const schema: JsonSchemaObject = {
   required: ["token", "webhookUrl"],
 };
 
-export const WebexChannelConfigSchema = schema;
+export const WebexChannelConfigSchema: ChannelConfigSchema = {
+  schema,
+  uiHints: {
+    token: {
+      sensitive: true,
+      tags: ["security", "auth", "webex", "channels"],
+    },
+    webhookUrl: {
+      tags: ["network", "webhook", "channels"],
+    },
+    defaultTo: {
+      tags: ["routing", "channels"],
+    },
+    listenPort: {
+      tags: ["network", "channels"],
+    },
+  },
+};
 
 export function resolveWebexChannelConfig(cfg: unknown): WebexChannelConfig {
   const channelCfg = (cfg as { channels?: { webex?: WebexChannelConfig } } | undefined)?.channels?.webex;
