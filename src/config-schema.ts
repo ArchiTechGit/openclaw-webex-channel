@@ -1,9 +1,3 @@
-import * as OpenClawCore from "openclaw/plugin-sdk/core";
-
-const buildChannelConfigSchemaCompat: <T>(schema: T) => T | { schema: T } =
-  (OpenClawCore as { buildChannelConfigSchema?: <T>(schema: T) => T }).buildChannelConfigSchema ??
-  ((nextSchema) => ({ schema: nextSchema }));
-
 export type WebexChannelConfig = {
   enabled?: boolean;
   token?: string;
@@ -73,7 +67,7 @@ const schema: JsonSchemaObject = {
   required: ["token", "webhookUrl"],
 };
 
-export const WebexChannelConfigSchema = buildChannelConfigSchemaCompat(schema);
+export const WebexChannelConfigSchema = schema;
 
 export function resolveWebexChannelConfig(cfg: unknown): WebexChannelConfig {
   const channelCfg = (cfg as { channels?: { webex?: WebexChannelConfig } } | undefined)?.channels?.webex;
